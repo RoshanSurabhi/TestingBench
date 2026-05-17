@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ClientDBStart>
+	<host>10.27.27.21</host>
+	<port>1234</port>
+	<maxMessageSz>1073741824</maxMessageSz>
+	<debug>1</debug>
+	<dedup>1</dedup>
+	<daysprior>28</daysprior>
+	<guicachefile>gui_snapshot_timestamps.json</guicachefile>
+</ClientDBStart>

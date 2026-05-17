@@ -1,0 +1,16 @@
+﻿  main.cpp
+C:\Users\RoshanSurabhi\Repo\UtilLib\src\TrData\TrOPRAFlags.h(62,9): warning C4305: 'initializing': truncation from 'int' to 'const unsigned char'
+  (compiling source file 'main.cpp')
+  
+C:\Users\RoshanSurabhi\Repo\UtilLib\src\TrData\TrOPRAFlags.h(62,11): warning C4309: 'initializing': truncation of constant value
+  (compiling source file 'main.cpp')
+  
+C:\Users\RoshanSurabhi\Repo\UtilLib\src\TrData\TrOPRAFlags.h(84,9): warning C4305: 'initializing': truncation from 'int' to 'const unsigned char'
+  (compiling source file 'main.cpp')
+  
+C:\Users\RoshanSurabhi\Repo\UtilLib\src\TrData\TrOPRAFlags.h(84,11): warning C4309: 'initializing': truncation of constant value
+  (compiling source file 'main.cpp')
+  
+  ResearchBench.vcxproj -> C:\Users\RoshanSurabhi\Repo\TrServerGUIV1\x64\Debug\ResearchBench.exe
+  'pwsh.exe' is not recognized as an internal or external command,
+  operable program or batch file.
