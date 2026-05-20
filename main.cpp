@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <string>
 
@@ -45,11 +46,36 @@ int main(int argc, char* argv[]) {
         cfg.binPath = fitFromBin;
         cfg.outDir = getArg(argc, argv, "--fit-out-dir", "fit_from_bin_batch");
         cfg.maxSnapshots = static_cast<std::size_t>(std::stoull(getArg(argc, argv, "--fit-max-snaps", "0")));
-        cfg.numBasis = static_cast<unsigned int>(std::stoul(getArg(argc, argv, "--fit-num-basis", "30")));
-        cfg.lambda = std::stod(getArg(argc, argv, "--fit-lambda", "0.005"));
+        cfg.numBasis = static_cast<unsigned int>(std::stoul(getArg(argc, argv, "--fit-num-basis", "25")));
+        cfg.lambda = std::stod(getArg(argc, argv, "--fit-lambda", "0.0001"));
         cfg.numConstraintStrikes = std::stoi(getArg(argc, argv, "--fit-arb-points", "20"));
+        cfg.z0 = std::stod(getArg(argc, argv, "--fit-z0", "-6"));
+        cfg.zn1 = std::stod(getArg(argc, argv, "--fit-zn1", "6"));
         cfg.writePriceComparison = hasFlag(argc, argv, "--fit-write-price-comparison");
         cfg.writeDebugArtifacts = hasFlag(argc, argv, "--fit-debug-artifacts");
+        cfg.writeFullArtifacts = hasFlag(argc, argv, "--fit-full-artifacts");
+        cfg.dearbQpDiagnostics = hasFlag(argc, argv, "--fit-dearb-qp-diagnostics");
+        cfg.fitTimestamp = getArg(argc, argv, "--fit-timestamp", "");
+        cfg.listTimestampsOnly = hasFlag(argc, argv, "--fit-list-timestamps");
+        {
+            std::string ds = getArg(argc, argv, "--fit-dearb-solver", "");
+            std::transform(ds.begin(), ds.end(), ds.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (!ds.empty() && ds != "clarabel" && ds != "qpoases") {
+                std::cerr << "Invalid --fit-dearb-solver=\"" << ds << "\" (expected clarabel|qpoases).\n";
+                return 1;
+            }
+            cfg.dearbSolver = ds;
+        }
+        {
+            std::string dl = getArg(argc, argv, "--fit-dearb-loss", "");
+            std::transform(dl.begin(), dl.end(), dl.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (!dl.empty() && dl != "inverse_spread" && dl != "inverse-spread" && dl != "uniform"
+                && dl != "inverse_raw_spread" && dl != "inverse-raw-spread") {
+                std::cerr << "Invalid --fit-dearb-loss=\"" << dl << "\" (expected inverse_spread|inverse_raw_spread|uniform).\n";
+                return 1;
+            }
+            cfg.dearbLoss = dl;
+        }
         return ResearchBench::runFitFromBin(cfg);
     }
 

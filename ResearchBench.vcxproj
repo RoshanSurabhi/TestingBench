@@ -70,6 +70,7 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
     <ClarabelRoot>$(ProjectDir)..\FinMath-Lib\Clarabel\Clarabel.cpp</ClarabelRoot>
+    <ClarabelInclude>$(ClarabelRoot)\include</ClarabelInclude>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -103,8 +104,10 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>.;fitting;decoupling;..\TrDBClient\native\src\app;..\UtilLib\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <PreprocessorDefinitions>_SILENCE_CXX17_NEGATORS_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>.;fitting;decoupling;..\TrDBClient\native\src\app;..\UtilLib\src;..\FinMath-Lib;..\FinMath-Lib\CVI;..\FinMath-Lib\CVI\CVITestSuite;..\FinMath-Lib\OptionPricing;..\FinMath-Lib\eigen-master;$(ClarabelInclude);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -124,8 +127,10 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>.;fitting;decoupling;..\TrDBClient\native\src\app;..\UtilLib\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <PreprocessorDefinitions>_SILENCE_CXX17_NEGATORS_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>.;fitting;decoupling;..\TrDBClient\native\src\app;..\UtilLib\src;..\FinMath-Lib;..\FinMath-Lib\CVI;..\FinMath-Lib\CVI\CVITestSuite;..\FinMath-Lib\OptionPricing;..\FinMath-Lib\eigen-master;$(ClarabelInclude);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -134,13 +139,15 @@
       <AdditionalDependencies>clarabel_c.dll.lib;ntdll.lib;Ws2_32.lib;Crypt32.lib;Bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>copy /Y "$(ClarabelRoot)\rust_wrapper\target\release\clarabel_c.dll" "$(OutDir)"</Command>
+      <Command>copy /Y "$(ClarabelRoot)\rust_wrapper\target\release\clarabel_c.dll" "$(OutDir)"
+copy /Y "$(ProjectDir)..\FinMath-Lib\CVI\CVITestSuite\x64\$(Configuration)\CVITestSurfaceFitterClampedMask.exe" "$(OutDir)" 2&gt;nul</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\FinMath-Lib\CVI\VolSnapshotToSurfExpir.cpp" />
     <ClCompile Include="decoupling\DelayedCallbackScheduler.cpp" />
     <ClCompile Include="Exporters.cpp" />
+    <ClCompile Include="fitting\BinFitClampedReplica.cpp" />
     <ClCompile Include="fitting\BinFitPipeline.cpp" />
     <ClCompile Include="fitting\CviFitBridge.cpp" />
     <ClCompile Include="fitting\FitDiagnostics.cpp" />
@@ -168,6 +175,9 @@
     </ProjectReference>
     <ProjectReference Include="..\TrDBClient\native\TrDBClientFetchCore.vcxproj">
       <Project>{f4b6c127-9f92-4d6b-9a66-730af9cbedaf}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\FinMath-Lib\CVI\CVITestSuite\CVITestSurfaceFitterClampedMask.vcxproj">
+      <Project>{9A8B7C6D-5E4F-4312-89AB-CDEF01234567}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

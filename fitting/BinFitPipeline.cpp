@@ -1,10 +1,12 @@
 #include "BinFitPipeline.h"
 
+#include "BinFitClampedReplica.h"
 #include "fileutils.h"
 
 #include "../../FinMath-Lib/CVI/CVISurfaceFitter.h"
 #include "../../FinMath-Lib/CVI/VolSnapshotToSurfExpir.h"
 #include "../../FinMath-Lib/OptionPricing/Black76.h"
+#include "../../FinMath-Lib/OptionPricing/SolveDeArb.h"
 #include "../../UtilLib/src/TrData/dbStructs.h"
 
 #include <algorithm>
@@ -16,6 +18,13 @@
 #include <sstream>
 #include <string>
 #include <vector>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#endif
 
 namespace fs = std::filesystem;
 namespace CVI = PricingTools::CVI;
@@ -196,13 +205,71 @@ bool writePriceComparisonCsv(
     return true;
 }
 
+} // namespace
+
+namespace {
+
+void applyBinFitCviParams(CVI::CVISurfaceFitter& fitter, const ResearchBench::BinFitConfig& cfg) {
+    fitter.m_cviParams = CVI::CVIFitParams{};
+    fitter.m_cviParams.num_basis = cfg.numBasis;
+    fitter.m_cviParams.lambda = cfg.lambda;
+    fitter.m_cviParams.num_constraint_strikes = cfg.numConstraintStrikes;
+    if (!cfg.dearbSolver.empty()) {
+        if (cfg.dearbSolver == "qpoases") {
+            fitter.m_cviParams.dearb_solver_mode = CVI::CVIDeArbSolverMode::QpOases;
+        } else if (cfg.dearbSolver == "clarabel") {
+            fitter.m_cviParams.dearb_solver_mode = CVI::CVIDeArbSolverMode::Clarabel;
+        }
+    }
+    if (!cfg.dearbLoss.empty()) {
+        if (cfg.dearbLoss == "uniform") {
+            fitter.m_cviParams.dearb_loss_weight_mode = CVI::CVIDeArbLossWeightMode::Uniform;
+        } else if (cfg.dearbLoss == "inverse_raw_spread" || cfg.dearbLoss == "inverse-raw-spread") {
+            fitter.m_cviParams.dearb_loss_weight_mode = CVI::CVIDeArbLossWeightMode::InverseRawSpread;
+        } else if (cfg.dearbLoss == "inverse_spread" || cfg.dearbLoss == "inverse-spread") {
+            fitter.m_cviParams.dearb_loss_weight_mode = CVI::CVIDeArbLossWeightMode::InverseSpread;
+        }
+    }
+}
+
+} // namespace
+
+namespace ResearchBench {
+
 bool fitOneSnapshot(
     const VolSurfaceSnapshot& snapshot,
     const fs::path& outDir,
-    const ResearchBench::BinFitConfig& cfg,
+    const BinFitConfig& cfg,
+    int snapIdxInBin,
     int& clarabelStatus,
     double& clarabelObj,
     std::string& message) {
+    if (cfg.writeFullArtifacts) {
+        fs::path exeDir = fs::current_path();
+#ifdef _WIN32
+        wchar_t modulePath[MAX_PATH]{};
+        if (GetModuleFileNameW(nullptr, modulePath, MAX_PATH) != 0) {
+            exeDir = fs::path(modulePath).parent_path();
+        }
+#endif
+        const fs::path clampedExe = findClampedMaskTestExe(exeDir);
+        return runClampedMaskReplica(
+            clampedExe,
+            cfg.binPath,
+            snapIdxInBin,
+            outDir,
+            cfg.numBasis,
+            cfg.lambda,
+            cfg.numConstraintStrikes,
+            cfg.z0,
+            cfg.zn1,
+            cfg.dearbSolver,
+            cfg.dearbLoss,
+            clarabelStatus,
+            clarabelObj,
+            message);
+    }
+
     const double spot = CVI::TrdbUnderlierSpot(snapshot);
     std::vector<PricingTools::SurfExpir> chain = CVI::TrdbSnapshotToSurfExpirChain(snapshot, spot);
     const std::vector<std::string> expirDates = CVI::TrdbExpirDatesFromSnapshot(snapshot);
@@ -212,56 +279,80 @@ bool fitOneSnapshot(
     }
 
     CVI::CVISurfaceFitter fitter;
-    auto& p = fitter.m_cviParams;
-    p.num_basis = cfg.numBasis;
-    p.lambda = cfg.lambda;
-    p.num_constraint_strikes = cfg.numConstraintStrikes;
-    p.z0 = -6.0;
-    p.zn1 = 6.0;
-    p.basis_placement_mode = CVI::CVIBasisPlacementMode::DataDrivenClampedToDomain;
-    p.z_reference_mode = CVI::CVIZReferenceMode::Forward;
-    p.weight_mode = CVI::CVIWeightMode::VarianceSpace;
-    p.outside_support_mode = CVI::CVIOutsideSupportMode::KeepAll;
-    p.q_treatment_mode = CVI::CVIQTreatmentMode::KeepPreludeQ;
-    p.butterfly_refinement_mode = CVI::CVIButterflyRefinementMode::Enabled;
-    p.dearb_solver_mode = CVI::CVIDeArbSolverMode::Clarabel;
+    applyBinFitCviParams(fitter, cfg);
+    fitter.InputData(std::move(chain), spot, static_cast<int>(CVI::kDeArbConstraintMask_AllSupported));
 
-    fitter.InputData(std::move(chain), spot, CVI::kDeArbConstraintMask_AllSupported);
-    if (!fitter.FitSurface(snapshot.instrument.symbol)) {
-        clarabelStatus = fitter.LastClarabelStatus();
-        clarabelObj = fitter.LastClarabelObjective();
-        message = fitter.LastError().empty() ? std::string("FitSurface failed") : fitter.LastError();
-        return false;
+    fs::create_directories(outDir);
+    if (cfg.writeDebugArtifacts) {
+        std::ofstream pre(outDir / "fit_debug.txt", std::ios::out | std::ios::trunc);
+        if (pre) {
+            pre << "symbol=" << snapshot.instrument.symbol << "\n";
+            pre << "timestamp=" << snapshot.timestamp << "\n";
+            pre << "spot=" << spot << "\n";
+            pre << "num_expiries=" << snapshot.expirs.size() << "\n";
+            size_t strikes = 0;
+            for (const auto& e : snapshot.expirs) {
+                strikes += e.strikes.size();
+            }
+            pre << "num_strikes=" << strikes << "\n";
+            pre << "surfexpir_chain=" << fitter.NumExpiries() << "\n";
+        }
     }
 
+    const bool enableDearbQpDiag = cfg.writeFullArtifacts || cfg.dearbQpDiagnostics;
+    if (enableDearbQpDiag) {
+        std::vector<std::string> expirDatesMut = expirDates;
+        DeArb::EnableDeArbQpDiagnosticsInDir(outDir, &expirDatesMut);
+    }
+    const bool fitOk = fitter.FitSurface(snapshot.instrument.symbol);
+    if (enableDearbQpDiag) {
+        DeArb::ClearSolveDeArbDiagnostics();
+    }
     clarabelStatus = fitter.LastClarabelStatus();
     clarabelObj = fitter.LastClarabelObjective();
+
+    if (!fitOk) {
+        message = fitter.LastError().empty() ? std::string("FitSurface failed") : fitter.LastError();
+    }
 
     if (!fs::exists(outDir)) {
         fs::create_directories(outDir);
     }
 
-    const bool wroteExpiry = writeExpiryFwdQCsv(
-        outDir / "expiry_fwd_q.csv", fitter.rSurface(), expirDates, fitter.SigmaStar(), fitter.VStar());
-    const bool wroteOption = writeOptionFitComparisonCsv(
-        outDir / "option_fit_comparison.csv",
-        fitter.NumBasis(),
-        fitter.BasisEvaluator(),
-        fitter.Options(),
-        fitter.VStar(),
-        fitter.FullSolution());
-    const bool wrotePrice = (!cfg.writePriceComparison && !cfg.writeDebugArtifacts)
-        || writePriceComparisonCsv(
-            outDir / "price_comparison.csv",
-            fitter.rSurface(),
+    if (!fitOk) {
+        if (cfg.writeDebugArtifacts) {
+            std::ofstream dbg(outDir / "fit_debug.txt", std::ios::out | std::ios::app);
+            if (dbg) {
+                dbg << "clarabel_status=" << clarabelStatus << "\n";
+                dbg << "clarabel_objective=" << std::setprecision(17) << clarabelObj << "\n";
+                dbg << "last_error=" << message << "\n";
+            }
+        }
+        return false;
+    } else {
+        const bool wroteExpiry = writeExpiryFwdQCsv(
+            outDir / "expiry_fwd_q.csv", fitter.rSurface(), expirDates, fitter.SigmaStar(), fitter.VStar());
+        const bool wroteOption = writeOptionFitComparisonCsv(
+            outDir / "option_fit_comparison.csv",
             fitter.NumBasis(),
             fitter.BasisEvaluator(),
+            fitter.Options(),
             fitter.VStar(),
             fitter.FullSolution());
-
-    if (!wroteExpiry || !wroteOption || !wrotePrice) {
-        message = "fit solved, but artifact write failed";
-        return false;
+        if (cfg.writePriceComparison) {
+            writePriceComparisonCsv(
+                outDir / "price_comparison.csv",
+                fitter.rSurface(),
+                fitter.NumBasis(),
+                fitter.BasisEvaluator(),
+                fitter.VStar(),
+                fitter.FullSolution());
+        }
+        if (!wroteExpiry || !wroteOption) {
+            message = "fit solved, but artifact write failed (expiry=" + std::to_string(wroteExpiry)
+                + ", option=" + std::to_string(wroteOption) + ")";
+            return false;
+        }
     }
 
     if (cfg.writeDebugArtifacts) {
@@ -280,7 +371,7 @@ bool fitOneSnapshot(
     return true;
 }
 
-} // namespace
+} // namespace ResearchBench
 
 int ResearchBench::runFitFromBin(const BinFitConfig& config) {
     if (config.binPath.empty()) {
@@ -304,6 +395,31 @@ int ResearchBench::runFitFromBin(const BinFitConfig& config) {
         return 2;
     }
 
+    if (config.listTimestampsOnly) {
+        for (std::size_t i = 0; i < snapshots.size(); ++i) {
+            std::cout << i << "\t" << snapshots[i].timestamp << "\n";
+        }
+        std::cout << "Total: " << snapshots.size() << " snapshot(s)\n";
+        return 0;
+    }
+
+    std::vector<std::size_t> indices;
+    indices.reserve(snapshots.size());
+    for (std::size_t i = 0; i < snapshots.size(); ++i) {
+        if (config.fitTimestamp.empty()) {
+            indices.push_back(i);
+            continue;
+        }
+        if (snapshots[i].timestamp.find(config.fitTimestamp) != std::string::npos) {
+            indices.push_back(i);
+        }
+    }
+    if (!config.fitTimestamp.empty() && indices.empty()) {
+        std::cerr << "No snapshot matched --fit-timestamp=\"" << config.fitTimestamp << "\"\n";
+        std::cerr << "Use --fit-list-timestamps to see available values.\n";
+        return 2;
+    }
+
     fs::create_directories(config.outDir);
     const fs::path summaryPath = fs::path(config.outDir) / "batch_cvi_summary.csv";
     std::ofstream summary(summaryPath, std::ios::out | std::ios::trunc);
@@ -313,12 +429,14 @@ int ResearchBench::runFitFromBin(const BinFitConfig& config) {
     }
     summary << "subfolder,idx_in_bin,timestamp,ok,clarabel_status,clarabel_objective,message\n";
 
+    const std::size_t runCount = indices.empty() ? snapshots.size() : indices.size();
     const std::size_t limit = (config.maxSnapshots == 0)
-        ? snapshots.size()
-        : std::min(config.maxSnapshots, snapshots.size());
+        ? runCount
+        : std::min(config.maxSnapshots, runCount);
     std::size_t okCount = 0;
 
-    for (std::size_t i = 0; i < limit; ++i) {
+    for (std::size_t run = 0; run < limit; ++run) {
+        const std::size_t i = indices.empty() ? run : indices[run];
         const VolSurfaceSnapshot& snap = snapshots[i];
         const std::string subfolder =
             "cvi_" + std::to_string(i) + "_" + sanitizeTimestampForPath(snap.timestamp);
@@ -327,7 +445,7 @@ int ResearchBench::runFitFromBin(const BinFitConfig& config) {
         int clarabelStatus = -1;
         double clarabelObj = 0.0;
         std::string message;
-        const bool ok = fitOneSnapshot(snap, subDir, config, clarabelStatus, clarabelObj, message);
+        const bool ok = fitOneSnapshot(snap, subDir, config, static_cast<int>(i), clarabelStatus, clarabelObj, message);
         if (ok) {
             ++okCount;
         }
@@ -337,7 +455,11 @@ int ResearchBench::runFitFromBin(const BinFitConfig& config) {
         summary.flush();
     }
 
-    std::cout << "FitFromBin: loaded " << snapshots.size() << " snapshots, processed " << limit << ".\n";
+    std::cout << "FitFromBin: loaded " << snapshots.size() << " snapshots, processed " << limit;
+    if (!config.fitTimestamp.empty()) {
+        std::cout << " (filter=\"" << config.fitTimestamp << "\")";
+    }
+    std::cout << ".\n";
     std::cout << "Success: " << okCount << "/" << limit << "\n";
     std::cout << "Output: " << summaryPath.string() << "\n";
     std::cout << "Default artifacts per snapshot: expiry_fwd_q.csv + option_fit_comparison.csv\n";
@@ -346,6 +468,9 @@ int ResearchBench::runFitFromBin(const BinFitConfig& config) {
     }
     if (config.writeDebugArtifacts) {
         std::cout << "Debug artifacts enabled.\n";
+    }
+    if (config.writeFullArtifacts) {
+        std::cout << "Full artifacts: CVITestSurfaceFitterClampedMask replica (exact test_clamped set).\n";
     }
     return 0;
 }

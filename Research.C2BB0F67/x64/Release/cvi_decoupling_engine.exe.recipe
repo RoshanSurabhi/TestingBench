@@ -2,7 +2,7 @@
 <Project>
   <ProjectOutputs>
     <ProjectOutput>
-      <FullPath>C:\Users\RoshanSurabhi\Repo\ResearchBench\x64\Release\cvi_decoupling_engine.exe</FullPath>
+      <FullPath>c:\Users\RoshanSurabhi\Repo\ResearchBench\x64\Release\cvi_decoupling_engine.exe</FullPath>
     </ProjectOutput>
   </ProjectOutputs>
   <ContentFiles />

@@ -41,5 +41,6 @@ Default output contract (minimal, computation-focused):
 
 Optional extras:
 
+- `--fit-dearb-qp-diagnostics` writes `solve_de_arb_qp_diagnostics.csv` and `de_arb_qp/` Clarabel matrix tree (also included with `--fit-full-artifacts`).
 - `--fit-write-price-comparison` adds per-snapshot `price_comparison.csv`
 - `--fit-debug-artifacts` adds debug files for fit troubleshooting parity

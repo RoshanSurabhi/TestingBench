@@ -1,2 +1,10 @@
 /tools/mid_delta_wls_cpp/build/
 /tools/mid_delta_wls_cpp/.cache/
+*.pyc
+*.tlog
+*.pdb
+*.lib
+*.obj
+*.pdb
+/Debug
+*.idb

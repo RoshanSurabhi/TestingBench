@@ -2,7 +2,10 @@
 <Project>
   <ProjectOutputs>
     <ProjectOutput>
-      <FullPath>C:\Users\RoshanSurabhi\Repo\ResearchBench\x64\Release\ResearchBench.exe</FullPath>
+      <FullPath>c:\Users\RoshanSurabhi\Repo\FinMath-Lib\CVI\CVITestSuite\x64\Release\CVITestSurfaceFitterClampedMask.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>c:\Users\RoshanSurabhi\Repo\ResearchBench\x64\Release\ResearchBench.exe</FullPath>
     </ProjectOutput>
   </ProjectOutputs>
   <ContentFiles />
